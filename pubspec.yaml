@@ -1,7 +1,7 @@
 name: flutter_bluetooth_sharing
 description: A Flutter plugin for sharing data over Bluetooth between two mobile devices.
-version: 0.0.1
-homepage:
+version: 0.0.2
+homepage: https://github.com/rohitcreoit/flutter_bluetooth_sharing
 
 environment:
   sdk: '>=3.0.6 <4.0.0'
