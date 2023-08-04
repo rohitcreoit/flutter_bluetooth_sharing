@@ -14,8 +14,11 @@ import io.flutter.embedding.engine.plugins.activity.ActivityAware;
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
+import java.io.InputStream;
+import java.util.Set;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -23,6 +26,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.lang.reflect.Method;
+import java.io.IOException;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
 
 @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR2)
 public class FlutterBluetoothSharingPlugin implements FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
@@ -64,7 +71,7 @@ public class FlutterBluetoothSharingPlugin implements FlutterPlugin, MethodChann
       case "connectToDevice":
         Map<String, String> deviceData = call.argument("device");
         BluetoothDevice device = bluetoothAdapter.getRemoteDevice(deviceData.get("address"));
-        connectToDevice(device);
+        connectToDevice(device,result);
         result.success(null);
         break;
       case "sendData":
@@ -83,11 +90,65 @@ public class FlutterBluetoothSharingPlugin implements FlutterPlugin, MethodChann
   }
 
   private void startAdvertising() {
-    // ... (same as before)
+    BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+
+    if (bluetoothAdapter == null) {
+      Log.e("TAG", "Bluetooth is not available on this device.");
+      return;
+    }
+
+    try {
+      BluetoothServerSocket serverSocket = bluetoothAdapter.listenUsingInsecureRfcommWithServiceRecord(
+              "BluetoothSharing", SERVICE_UUID);
+
+      Log.d("TAG", "Advertising started. Waiting for incoming connections...");
+
+      while (true) {
+        BluetoothSocket socket = serverSocket.accept();
+        if (socket != null) {
+          Log.d("TAG", "Device connected: " + socket.getRemoteDevice().getName());
+
+          // Handle the connected socket
+          manageConnectedSocket(socket);
+        }
+      }
+    } catch (IOException e) {
+      Log.e("TAG", "Error in startAdvertising: " + e.getMessage());
+    }
   }
 
+
   private void startDiscovery() {
-    // ... (same as before)
+    BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+
+    if (bluetoothAdapter == null) {
+      Log.e("TAG", "Bluetooth is not available on this device.");
+      return;
+    }
+
+    if (!bluetoothAdapter.isEnabled()) {
+      Log.e("TAG", "Bluetooth is not enabled.");
+      return;
+    }
+
+    // Cancel ongoing discovery if it's active
+    if (bluetoothAdapter.isDiscovering()) {
+      bluetoothAdapter.cancelDiscovery();
+    }
+
+    // Start discovery
+    boolean discoveryStarted = bluetoothAdapter.startDiscovery();
+    if (discoveryStarted) {
+      Log.d("TAG", "Discovery started. Scanning for nearby devices...");
+
+      // Retrieve paired devices
+      Set<BluetoothDevice> pairedDevices = bluetoothAdapter.getBondedDevices();
+      for (BluetoothDevice device : pairedDevices) {
+        Log.d("TAG", "Paired device found: " + device.getName() + " (" + device.getAddress() + ")");
+      }
+    } else {
+      Log.e("TAG", "Error starting discovery.");
+    }
   }
 
   private List<Map<String, String>> getDiscoverableDevices() {
@@ -102,14 +163,13 @@ public class FlutterBluetoothSharingPlugin implements FlutterPlugin, MethodChann
   }
 
   private void connectToDevice(BluetoothDevice device) {
+    if (device == null) {
+      Log.e("TAG", "BluetoothDevice object is null");
+      return;
+    }
+
     executorService.execute(() -> {
       try {
-        // Check if the device data is null
-        if (device == null) {
-          Log.e(TAG, "Device data is null");
-          return;
-        }
-
         BluetoothSocket socket = device.createRfcommSocketToServiceRecord(SERVICE_UUID);
         socket.connect();
 
@@ -117,14 +177,38 @@ public class FlutterBluetoothSharingPlugin implements FlutterPlugin, MethodChann
           manageConnectedSocket(socket);
         }
       } catch (IOException e) {
-        Log.e(TAG, "Error in connectToDevice: " + e.getMessage());
+        Log.e("TAG", "Error in connectToDevice: " + e.getMessage());
       }
     });
   }
 
+
   private void manageConnectedSocket(BluetoothSocket socket) {
-    // Implement data exchange logic here using InputStream and OutputStream
+    try {
+      InputStream inputStream = socket.getInputStream();
+      OutputStream outputStream = socket.getOutputStream();
+
+
+      // Example: Sending data
+      String dataToSend = "Hello, this is data from Device A!";
+      outputStream.write(dataToSend.getBytes());
+
+      // Example: Receiving data
+      byte[] buffer = new byte[1024];
+      int bytesRead = inputStream.read(buffer);
+      if (bytesRead > 0) {
+        String receivedData = new String(buffer, 0, bytesRead);
+        Log.d("TAG", "Received data: " + receivedData);
+      }
+
+      // Close the input and output streams when done
+      inputStream.close();
+      outputStream.close();
+    } catch (IOException e) {
+      Log.e("TAG", "Error in manageConnectedSocket: " + e.getMessage());
+    }
   }
+
 
   private void sendData(String data) {
     // Implement data sending logic here
